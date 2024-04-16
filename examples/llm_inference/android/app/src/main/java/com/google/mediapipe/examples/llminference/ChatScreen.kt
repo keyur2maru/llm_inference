@@ -1,5 +1,7 @@
 package com.google.mediapipe.examples.llminference
 
+import android.graphics.drawable.Icon
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,12 +18,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
@@ -46,27 +55,61 @@ internal fun ChatRoute(
 ) {
     val uiState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val textInputEnabled by chatViewModel.isTextInputEnabled.collectAsStateWithLifecycle()
+    val audioModeEnabled by chatViewModel.audioModeEnabled.collectAsStateWithLifecycle()
+    val isRecording by chatViewModel.isRecording.collectAsStateWithLifecycle()
+    val transcription by chatViewModel.transcription.collectAsStateWithLifecycle()
+
     ChatScreen(
         uiState,
-        textInputEnabled
-    ) { message ->
-        chatViewModel.sendMessage(message)
-    }
+        textInputEnabled,
+        audioModeEnabled,
+        isRecording,
+        onSendMessage = { chatViewModel.sendMessage(it) },
+        onToggleAudioMode = { chatViewModel.toggleAudioMode() },
+        onToggleRecording = { chatViewModel.toggleRecording() },
+        onOptionSelected = { /* Handle option selection */ },
+        onPlayRecording = { chatViewModel.playRecording() },
+        transcription = transcription,
+        onEditTranscription = { newTranscription -> chatViewModel.editTranscription(newTranscription) }
+
+    )
 }
+
 
 @Composable
 fun ChatScreen(
     uiState: UiState,
     textInputEnabled: Boolean = true,
-    onSendMessage: (String) -> Unit
+    audioModeEnabled: Boolean = false,
+    isRecording: Boolean = false,
+    onSendMessage: (String) -> Unit,
+    onToggleAudioMode: () -> Unit,
+    onToggleRecording: () -> Unit,
+    onOptionSelected: (String) -> Unit,
+    onPlayRecording: () -> Unit,
+    transcription: String,
+    onEditTranscription: (String) -> Unit
 ) {
     var userMessage by rememberSaveable { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize(),
-        verticalArrangement = Arrangement.Bottom
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Audio mode toggle at the top center
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Audio Mode")
+            Switch(
+                checked = audioModeEnabled,
+                onCheckedChange = { onToggleAudioMode() },
+                colors = SwitchDefaults.colors()
+            )
+        }
+
+        // Message display area
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -79,50 +122,119 @@ fun ChatScreen(
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
-            Column { }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            TextField(
-                value = userMessage,
-                onValueChange = { userMessage = it },
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences,
-                ),
-                label = {
-                    Text(stringResource(R.string.chat_label))
-                },
+        // Bottom center controls for recording and options
+        if (audioModeEnabled) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .weight(0.85f),
-                enabled = textInputEnabled
-            )
-
-            IconButton(
-                onClick = {
-                    if (userMessage.isNotBlank()) {
-                        onSendMessage(userMessage)
-                        userMessage = ""
-                    }
-                },
-                modifier = Modifier
-                    .padding(start = 16.dp)
-                    .align(Alignment.CenterVertically)
                     .fillMaxWidth()
-                    .weight(0.15f),
-                enabled = textInputEnabled
+                    .padding(8.dp)
             ) {
-                Icon(
-                    Icons.AutoMirrored.Default.Send,
-                    contentDescription = stringResource(R.string.action_send),
-                    modifier = Modifier
+                if (isRecording) {
+                    Button(onClick = { onToggleRecording() }) {
+                        Text("Stop")
+                    }
+                } else {
+                    Button(onClick = { onToggleRecording() }) {
+                        Text("Record")
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        IconButton(
+                            onClick = {
+                                Log.d("ChatScreen", "Edit button clicked")
+                                onOptionSelected("Edit")
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit")
+                        }
+                        IconButton(
+                            onClick = {
+                                onOptionSelected("Listen")
+                                Log.d("ChatScreen", "Listen button clicked")
+                                onPlayRecording()
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "Listen")
+                        }
+                        IconButton(
+                            onClick = {
+                                Log.d("ChatScreen", "Send button clicked")
+                                onOptionSelected("Send")
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            TextField(
+                                value = transcription,
+                                onValueChange = { onEditTranscription(it) },
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                            )
+                            IconButton(
+                                onClick = {
+                                    if (transcription.isNotBlank()) {
+                                        onSendMessage(transcription)
+                                        onEditTranscription("")
+                                    }
+                                },
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                                enabled = textInputEnabled
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                            }
+                        }
+
+
+
+                        //Icon(Icons.Filled.Edit, contentDescription = "Edit")
+                        //Icon(Icons.Filled.PlayArrow, contentDescription = "Listen")
+                        //Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+
+
+                        //Button(onClick = { onOptionSelected("Edit") }) { Text("Edit") }
+                        //Button(onClick = { onOptionSelected("Listen") }) { Text("Listen") }
+                        //Button(onClick = { onOptionSelected("Abrakadabra") }) { Text("Abrakadabra") }
+                    }
+                }
+            }
+        } else {
+            // Text input and send button only visible when not in audio mode
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(
+                    value = userMessage,
+                    onValueChange = { userMessage = it },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    label = { Text("Type a message") },
+                    modifier = Modifier.weight(1f),
+                    enabled = textInputEnabled
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (userMessage.isNotBlank()) {
+                            onSendMessage(userMessage)
+                            userMessage = ""
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                    enabled = textInputEnabled
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                }
             }
         }
     }
